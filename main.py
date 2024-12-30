@@ -1,6 +1,7 @@
 import requests
 from PIL import Image, ImageDraw
 from io import BytesIO
+import re
 import csv
 import os
 import sys
@@ -110,17 +111,6 @@ def create_card_sheet_from_file(file_name="input"):
                 x_offset = x_margin + (idx % cards_per_row) * card_width
                 y_offset = y_margin + (idx // cards_per_row) * card_height
                 sheet_front.paste(card_image.resize((card_width, card_height)), (x_offset, y_offset))
-
-                # Draw cutline markers
-                if (idx // cards_per_row) % 3 in [0, 2]:  # Vertical markers for 1st and 4th rows
-                    draw.line([(x_offset, y_offset - 10), (x_offset, y_offset + 10)], fill="red", width=3)
-                    draw.line([(x_offset + card_width, y_offset - 10), (x_offset + card_width, y_offset + 10)], fill="red", width=3)
-                    draw.line([(x_offset, y_offset + card_height - 10), (x_offset, y_offset + card_height + 10)], fill="red", width=3)
-                    draw.line([(x_offset + card_width, y_offset + card_height - 10), (x_offset + card_width, y_offset + card_height + 10)], fill="red", width=3)
-                else:  # Horizontal markers for 2nd and 3rd rows
-                    draw.line([(x_offset - 10, y_offset), (x_offset + 10, y_offset)], fill="red", width=3)
-                    draw.line([(x_offset - 10, y_offset + card_height), (x_offset + 10, y_offset + card_height)], fill="red", width=3)
-
             else:
                 print(f"Failed to fetch: {card_entry}")
 
@@ -129,6 +119,52 @@ def create_card_sheet_from_file(file_name="input"):
         print(f"Saved card sheet to {output_file_front}")
         sheet_num += 1
 
+def natural_sort_key(s):
+    return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
+
+def create_card_sheet_from_custom(batch_name):
+    custom_dir = os.path.join(os.path.dirname(__file__), "customAssets", batch_name)
+    if not os.path.exists(custom_dir):
+        print(f"Custom directory {custom_dir} not found.")
+        return
+
+    # Sort files naturally by filename
+    card_files = sorted(
+        [os.path.join(custom_dir, f) for f in os.listdir(custom_dir) if f.endswith('.png')],
+        key=natural_sort_key
+    )
+    
+    if not card_files:
+        print(f"No .png files found in {custom_dir}.")
+        return
+
+    cards_per_row = 3
+    card_width = 750
+    card_height = 1050
+    cards_per_sheet = cards_per_row * 3
+
+    sheet_num = 1
+    for sheet_start in range(0, len(card_files), cards_per_sheet):
+        sheet_front = Image.new("RGB", (2550, 3300), "white")
+        x_margin = (2550 - card_width * cards_per_row) // 2
+        y_margin = (3300 - card_height * 3) // 2
+
+        current_files = card_files[sheet_start:sheet_start + cards_per_sheet]
+        for idx, card_file in enumerate(current_files):
+            card_image = Image.open(card_file).resize((card_width, card_height))
+            x_offset = x_margin + (idx % cards_per_row) * card_width
+            y_offset = y_margin + (idx // cards_per_row) * card_height
+            sheet_front.paste(card_image, (x_offset, y_offset))
+
+        output_file, _ = get_output_file(sheet_num, batch_name)
+        sheet_front.save(output_file)
+        print(f"Custom card sheet saved to {output_file}")
+        sheet_num += 1
+
 if __name__ == "__main__":
-    file_name = sys.argv[1] if len(sys.argv) > 1 else "input"
-    create_card_sheet_from_file(file_name)
+    if len(sys.argv) > 2 and sys.argv[1] == "custom":
+        batch_name = sys.argv[2]
+        create_card_sheet_from_custom(batch_name)
+    else:
+        file_name = sys.argv[1] if len(sys.argv) > 1 else "input"
+        create_card_sheet_from_file(file_name)

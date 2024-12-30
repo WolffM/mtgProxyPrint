@@ -1,0 +1,18 @@
+MATTE:
+Presentation Matte,
+High,
+No Fit to Page
+No Sharpen
+
+
+GLOSSY:
+
+USE MTG 
+8.5 x 11 profile
+
+8.5 x 11
+Photo Paper Glossy
+High,
+No Fit to Page
+No Sharpen
+EPSON VIVID color correction
