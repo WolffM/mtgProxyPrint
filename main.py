@@ -7,56 +7,122 @@ import os
 import sys
 from datetime import datetime
 
+import requests
+from PIL import Image
+from io import BytesIO
+import json
+
 def fetch_card_image(card_name=None, set_code=None, collector_number=None):
     base_url = 'https://api.scryfall.com/cards'
-    
-    # Construct URL based on available data
+    data = None  # Initialize data to avoid UnboundLocalError
+
+    # 1) Direct fetch if we have set_code and collector_number
     if set_code and collector_number:
-        url = f'{base_url}/{set_code.lower()}/{collector_number}'
-    elif card_name:
-        url = f'{base_url}/named?fuzzy={card_name}'
-    else:
-        print("Error: Either card name or set code and collector number must be provided.")
+        direct_url = f'{base_url}/{set_code.lower()}/{collector_number}'
+        print(f"Fetching direct URL: {direct_url}")
+        response = requests.get(direct_url)
+        print(f"Direct Fetch Response Status: {response.status_code}")
+
+        if response.status_code == 200:
+            data = response.json()
+            # Check if images are missing
+            if 'image_uris' not in data and 'card_faces' not in data:
+                print("No image_uris or card_faces found in direct fetch. Raw JSON:")
+                print(json.dumps(data, indent=2))
+        else:
+            print(f"Direct fetch failed with status code: {response.status_code}")
+
+    # 2) Fallback to name-based search (if we have card_name but no valid images yet)
+    if (not data or ('image_uris' not in data and 'card_faces' not in data)) and card_name:
+        fallback_url = f'{base_url}/search?q={card_name}+set:{set_code}'
+        print(f"Falling back to name-based search URL: {fallback_url}")
+        response = requests.get(fallback_url)
+        print(f"Fallback Name Search Response Status: {response.status_code}")
+
+        if response.status_code == 200:
+            search_data = response.json()
+            if 'data' in search_data and len(search_data['data']) > 0:
+                data = search_data['data'][0]  # Use the first result
+            else:
+                print(f"No card found in name-based search for {card_name} in set {set_code}")
+
+    # 3) Fallback to searching by collector number (cn:XXX) + set code (e:XXX)
+    #    if images are still missing and we do have set_code + collector_number
+    if (not data or ('image_uris' not in data and 'card_faces' not in data)) and set_code and collector_number:
+        fallback_url = f'{base_url}/search?q=cn:{collector_number}+e:{set_code.lower()}'
+        print(f"Falling back to CN-based search URL: {fallback_url}")
+        response = requests.get(fallback_url)
+        print(f"Fallback CN Search Response Status: {response.status_code}")
+
+        if response.status_code == 200:
+            search_data = response.json()
+            if 'data' in search_data and len(search_data['data']) > 0:
+                data = search_data['data'][0]
+            else:
+                print(f"No card found in collector-based search for cn:{collector_number} e:{set_code.lower()}")
+
+    # If we still don't have any data, bail out
+    if not data:
+        print(f"Failed to retrieve any data for card: {card_name or (set_code + '/' + collector_number)}")
         return None, None
 
-    print(f"Fetching URL: {url}")
-    response = requests.get(url)
-    print(f"Response Status: {response.status_code}")
-    
-    # If the set/collector number lookup fails, try a name-based lookup
-    if response.status_code == 404 and card_name:
-        print("Falling back to name-based lookup.")
-        url = f'{base_url}/named?fuzzy={card_name}'
-        response = requests.get(url)
-        print(f"Fallback Response Status: {response.status_code}")
-        if response.status_code != 200:
-            print(f"Card not found: {card_name}")
-            return None, None
+    # Debug: print the layout
+    layout = data.get('layout', 'unknown')
+    print(f"Card layout: {layout}")
 
-    if response.status_code == 200:
-        data = response.json()
+    # Handle double-sided / multi-face layouts
+    # Note: Scryfall uses various layout keywords for multi-face cards (transform, modal_dfc, flip, split, etc.)
+    if layout in ['transform', 'modal_dfc', 'double_faced_token', 'flip', 'split', 'reversible_card']:
+        if 'card_faces' in data:
+            print(f"Card is multi-faced with layout: {layout}")
 
-        # Handle double-sided or modal cards
-        if 'layout' in data and data['layout'] in ['transform', 'modal_dfc']:
-            print(f"Card is double-sided/modal with layout: {data['layout']}")
-            front_image_url = data['card_faces'][0]['image_uris']['large']
-            back_image_url = data['card_faces'][1]['image_uris']['large']
+            # Attempt to fetch front/back images if they exist
+            front_face = data['card_faces'][0]
+            back_face = data['card_faces'][1] if len(data['card_faces']) > 1 else None
 
-            front_image = Image.open(BytesIO(requests.get(front_image_url).content))
-            back_image = Image.open(BytesIO(requests.get(back_image_url).content))
+            front_image_url = front_face['image_uris']['large'] if 'image_uris' in front_face else None
+            back_image_url = (
+                back_face['image_uris']['large']
+                if back_face and 'image_uris' in back_face
+                else None
+            )
+
+            front_image = None
+            back_image = None
+
+            if front_image_url:
+                front_response = requests.get(front_image_url)
+                if front_response.status_code == 200:
+                    front_image = Image.open(BytesIO(front_response.content))
+
+            if back_image_url:
+                back_response = requests.get(back_image_url)
+                if back_response.status_code == 200:
+                    back_image = Image.open(BytesIO(back_response.content))
 
             return front_image, back_image
+        else:
+            print("Multi-faced layout but 'card_faces' is missing. Trying single-sided fallback...")
+            if 'image_uris' in data:
+                single_url = data['image_uris'].get('large')
+                if single_url:
+                    single_resp = requests.get(single_url)
+                    if single_resp.status_code == 200:
+                        return Image.open(BytesIO(single_resp.content)), None
+            return None, None
 
-        # Handle single-sided cards
-        if 'image_uris' in data:
-            image_url = data['image_uris']['large']
+    # Otherwise, treat it as single-sided
+    if 'image_uris' in data:
+        image_url = data['image_uris'].get('large')
+        if image_url:
             image_response = requests.get(image_url)
             print(f"Image Fetch Status: {image_response.status_code}")
             if image_response.status_code == 200:
                 return Image.open(BytesIO(image_response.content)), None
 
-    print(f"Failed to fetch card data for URL: {url}")
+    print(f"No valid image data found for card: {card_name or (set_code + '/' + collector_number)}")
     return None, None
+
 
 def fetch_card_image_by_url(card_url):
     try:
@@ -65,12 +131,13 @@ def fetch_card_image_by_url(card_url):
         collector_number = parts[-2]
         print(f"Extracted Set Code: {set_code}, Collector Number: {collector_number}")
 
-        # Call the API with correct structure
+        # Call the main function
         front_image, back_image = fetch_card_image(None, set_code, collector_number)
 
         if not front_image and not back_image:
             print(f"Card not found or has special layout: {card_url}")
         return front_image, back_image
+
     except IndexError:
         print(f"Malformed URL: {card_url}")
         return None, None
