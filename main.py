@@ -7,22 +7,38 @@ import os
 import sys
 from datetime import datetime
 
-def fetch_card_image(card_name, set_code=None, collector_number=None):
+def fetch_card_image(card_name=None, set_code=None, collector_number=None):
     base_url = 'https://api.scryfall.com/cards'
+    
+    # Construct URL based on available data
     if set_code and collector_number:
         url = f'{base_url}/{set_code.lower()}/{collector_number}'
-    else:
+    elif card_name:
         url = f'{base_url}/named?fuzzy={card_name}'
-    
+    else:
+        print("Error: Either card name or set code and collector number must be provided.")
+        return None, None
+
     print(f"Fetching URL: {url}")
     response = requests.get(url)
     print(f"Response Status: {response.status_code}")
+    
+    # If the set/collector number lookup fails, try a name-based lookup
+    if response.status_code == 404 and card_name:
+        print("Falling back to name-based lookup.")
+        url = f'{base_url}/named?fuzzy={card_name}'
+        response = requests.get(url)
+        print(f"Fallback Response Status: {response.status_code}")
+        if response.status_code != 200:
+            print(f"Card not found: {card_name}")
+            return None, None
+
     if response.status_code == 200:
         data = response.json()
 
-        # Handle double-sided cards or tokens
-        if 'layout' in data and data['layout'] in ['transform', 'double_faced_token']:
-            print(f"Card is double-sided with layout: {data['layout']}")
+        # Handle double-sided or modal cards
+        if 'layout' in data and data['layout'] in ['transform', 'modal_dfc']:
+            print(f"Card is double-sided/modal with layout: {data['layout']}")
             front_image_url = data['card_faces'][0]['image_uris']['large']
             back_image_url = data['card_faces'][1]['image_uris']['large']
 
@@ -39,6 +55,7 @@ def fetch_card_image(card_name, set_code=None, collector_number=None):
             if image_response.status_code == 200:
                 return Image.open(BytesIO(image_response.content)), None
 
+    print(f"Failed to fetch card data for URL: {url}")
     return None, None
 
 def fetch_card_image_by_url(card_url):
@@ -88,6 +105,7 @@ def create_card_sheet_from_file(file_name="input"):
     cards_per_sheet = cards_per_row * 3  # 9 cards per sheet
 
     sheet_num = 1
+    back_images = []  # Store back images for later processing
 
     for sheet_start in range(0, len(card_list), cards_per_sheet):
         sheet_front = Image.new("RGB", (2550, 3300), "white")
@@ -114,10 +132,37 @@ def create_card_sheet_from_file(file_name="input"):
             else:
                 print(f"Failed to fetch: {card_entry}")
 
+            # Store back image if present
+            if back_image:
+                back_images.append(back_image)
+
+        # Save the front sheet
         output_file_front = get_output_file(sheet_num, file_name)[0]
         sheet_front.save(output_file_front)
-        print(f"Saved card sheet to {output_file_front}")
+        print(f"Saved front card sheet to {output_file_front}")
         sheet_num += 1
+
+        # Create and save back sheet if there are back images
+        if back_images:
+            sheet_back = Image.new("RGB", (2550, 3300), "white")
+            for idx, back_image in enumerate(back_images):
+                # Calculate mirrored positions (horizontal flip only)
+                row = idx // cards_per_row
+                col = idx % cards_per_row
+                mirrored_col = (cards_per_row - 1) - col
+                x_offset = x_margin + mirrored_col * card_width
+                y_offset = y_margin + row * card_height
+                sheet_back.paste(back_image.resize((card_width, card_height)), (x_offset, y_offset))
+
+            # Save the back sheet
+            output_file_back = get_output_file(sheet_num, f"{file_name}_back")[0]
+            sheet_back.save(output_file_back)
+            print(f"Saved back card sheet to {output_file_back}")
+
+            # Clear back images for the next sheet
+            back_images = []
+
+    print("Processing complete.")
 
 def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
