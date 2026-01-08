@@ -1,0 +1,22 @@
+name: VibeCheck
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '0 0 * * 0'
+
+jobs:
+  vibecheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run VibeCheck
+        uses: WolffM/vibecheck@main
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
