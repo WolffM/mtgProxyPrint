@@ -1,3 +1,5 @@
 Output/
 done/
 customAssets/
+__pycache__/
+*.pyc
