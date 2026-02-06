@@ -1,5 +1,5 @@
 import requests
-from PIL import Image, ImageDraw
+from PIL import Image
 from io import BytesIO
 import re
 import csv
@@ -176,7 +176,6 @@ def create_card_sheet_from_file(file_name="input"):
 
     for sheet_start in range(0, len(card_list), cards_per_sheet):
         sheet_front = Image.new("RGB", (2550, 3300), "white")
-        draw = ImageDraw.Draw(sheet_front)
         current_specs = card_list[sheet_start:sheet_start + cards_per_sheet]
         x_margin = (2550 - card_width * cards_per_row) // 2
         y_margin = (3300 - card_height * 3) // 2
