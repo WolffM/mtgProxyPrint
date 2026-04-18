@@ -12,6 +12,8 @@ from PIL import Image
 from io import BytesIO
 import json
 
+REQUEST_TIMEOUT = 10  # Timeout in seconds for all HTTP requests
+
 def fetch_card_image(card_name=None, set_code=None, collector_number=None):
     base_url = 'https://api.scryfall.com/cards'
     data = None  # Initialize data to avoid UnboundLocalError
@@ -20,7 +22,7 @@ def fetch_card_image(card_name=None, set_code=None, collector_number=None):
     if set_code and collector_number:
         direct_url = f'{base_url}/{set_code.lower()}/{collector_number}'
         print(f"Fetching direct URL: {direct_url}")
-        response = requests.get(direct_url)
+        response = requests.get(direct_url, timeout=REQUEST_TIMEOUT)
         print(f"Direct Fetch Response Status: {response.status_code}")
 
         if response.status_code == 200:
@@ -36,7 +38,7 @@ def fetch_card_image(card_name=None, set_code=None, collector_number=None):
     if (not data or ('image_uris' not in data and 'card_faces' not in data)) and card_name:
         fallback_url = f'{base_url}/search?q={card_name}+set:{set_code}'
         print(f"Falling back to name-based search URL: {fallback_url}")
-        response = requests.get(fallback_url)
+        response = requests.get(fallback_url, timeout=REQUEST_TIMEOUT)
         print(f"Fallback Name Search Response Status: {response.status_code}")
 
         if response.status_code == 200:
@@ -51,7 +53,7 @@ def fetch_card_image(card_name=None, set_code=None, collector_number=None):
     if (not data or ('image_uris' not in data and 'card_faces' not in data)) and set_code and collector_number:
         fallback_url = f'{base_url}/search?q=cn:{collector_number}+e:{set_code.lower()}'
         print(f"Falling back to CN-based search URL: {fallback_url}")
-        response = requests.get(fallback_url)
+        response = requests.get(fallback_url, timeout=REQUEST_TIMEOUT)
         print(f"Fallback CN Search Response Status: {response.status_code}")
 
         if response.status_code == 200:
@@ -91,12 +93,12 @@ def fetch_card_image(card_name=None, set_code=None, collector_number=None):
             back_image = None
 
             if front_image_url:
-                front_response = requests.get(front_image_url)
+                front_response = requests.get(front_image_url, timeout=REQUEST_TIMEOUT)
                 if front_response.status_code == 200:
                     front_image = Image.open(BytesIO(front_response.content))
 
             if back_image_url:
-                back_response = requests.get(back_image_url)
+                back_response = requests.get(back_image_url, timeout=REQUEST_TIMEOUT)
                 if back_response.status_code == 200:
                     back_image = Image.open(BytesIO(back_response.content))
 
@@ -106,7 +108,7 @@ def fetch_card_image(card_name=None, set_code=None, collector_number=None):
             if 'image_uris' in data:
                 single_url = data['image_uris'].get('large')
                 if single_url:
-                    single_resp = requests.get(single_url)
+                    single_resp = requests.get(single_url, timeout=REQUEST_TIMEOUT)
                     if single_resp.status_code == 200:
                         return Image.open(BytesIO(single_resp.content)), None
             return None, None
@@ -115,7 +117,7 @@ def fetch_card_image(card_name=None, set_code=None, collector_number=None):
     if 'image_uris' in data:
         image_url = data['image_uris'].get('large')
         if image_url:
-            image_response = requests.get(image_url)
+            image_response = requests.get(image_url, timeout=REQUEST_TIMEOUT)
             print(f"Image Fetch Status: {image_response.status_code}")
             if image_response.status_code == 200:
                 return Image.open(BytesIO(image_response.content)), None
