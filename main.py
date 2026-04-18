@@ -12,7 +12,7 @@ from PIL import Image
 from io import BytesIO
 import json
 
-REQUEST_TIMEOUT = 10
+REQUEST_TIMEOUT = 10  # Timeout in seconds for all HTTP requests
 
 def fetch_card_image(card_name=None, set_code=None, collector_number=None):
     base_url = 'https://api.scryfall.com/cards'
