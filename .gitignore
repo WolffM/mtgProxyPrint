@@ -3,3 +3,5 @@ done/
 customAssets/
 __pycache__/
 *.pyc
+.mypy_cache/
+.env
